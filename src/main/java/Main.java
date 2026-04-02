@@ -12,6 +12,7 @@ public class Main {
     //  Uncomment the code below to pass the first stage
       
        int port = 6379;
+       // Create a pool of 10 threads to handle 10 clients at once
        ExecutorService executor = Executors.newFixedThreadPool(10);
        try (ServerSocket serverSocket = new ServerSocket(port)) { 
          
@@ -33,24 +34,38 @@ public class Main {
         }
        }
   
-  private static void handleClient(Socket clientSocket) {
-    // Logic to handle the client connection and process commands
-    try(java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(clientSocket.getInputStream()))){
+private static void handleClient(Socket clientSocket) {
+    try (BufferedReader reader = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
+         OutputStream output = clientSocket.getOutputStream()) {
+        
         String line;
-        while ((line= reader.readLine() ) != null) {
-    // Logic to handle the command based on what 'line' contains
-    if (line.toUpperCase().contains("PING")) {
-        java.io.OutputStream output = clientSocket.getOutputStream();
-        output.write("+PONG\r\n".getBytes());
-        output.flush();        
-    }
-}
-       } catch (IOException e) {
-         System.out.println("IOException: " + e.getMessage());
-       } finally {
-            try { clientSocket.close(); } catch (IOException ignored) {}
-        }
-    }
+        while ((line = reader.readLine()) != null) {
+            // 1. Detect an Array (Starts with '*')
+            if (line.startsWith("*")) {
+                int numElements = Integer.parseInt(line.substring(1));
+                
+                // 2. Read the first element (The Command Name)
+                reader.readLine(); // Skip the '$' length line
+                String command = reader.readLine().toUpperCase(); 
 
+                if (command.equals("PING")) {
+                    output.write("+PONG\r\n".getBytes());
+                } 
+                else if (command.equals("ECHO")) {
+                    // 3. Read the second element (The Argument)
+                    reader.readLine(); // Skip the '$' length line
+                    String argument = reader.readLine();
+                    
+                    // 4. Respond with a Bulk String: $<length>\r\n<data>\r\n
+                    String response = "$" + argument.length() + "\r\n" + argument + "\r\n";
+                    output.write(response.getBytes());
+                }
+                output.flush();
+            }
+        }
+    } catch (IOException e) {
+        System.out.println("Client Error: " + e.getMessage());
+    }
        
+}
 }
