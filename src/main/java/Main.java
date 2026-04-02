@@ -61,7 +61,17 @@ public class Main {
 
     // Now process based on the first element (the command name)
     String commandName = commands.get(0).toUpperCase();
-
+    if (commandName.equals("SET") && commands.size() >= 3) {
+    String key = commands.get(1);
+    String value = commands.get(2);
+    
+    // Store the data
+    storage.put(key, value);
+    
+    // Redis responds with "OK" (Simple String) for a successful SET
+    output.write("+OK\r\n".getBytes());
+    output.flush();
+}
     if (commandName.equals("PING")) {
         output.write("+PONG\r\n".getBytes());
     } 
