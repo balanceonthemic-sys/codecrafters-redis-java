@@ -1,4 +1,7 @@
+import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.concurrent.ExecutorService;
@@ -39,7 +42,7 @@ private static void handleClient(Socket clientSocket) {
          OutputStream output = clientSocket.getOutputStream()) {
         
         String line;
-        while ((line = reader.readLine()) != null) {
+        while (null != (line = reader.readLine())) {
             // 1. Detect an Array (Starts with '*')
             if (line.startsWith("*")) {
                 int numElements = Integer.parseInt(line.substring(1));
