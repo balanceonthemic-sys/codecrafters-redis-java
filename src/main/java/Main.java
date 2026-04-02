@@ -4,6 +4,7 @@ import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -37,7 +38,7 @@ public class Main {
         }
        }
   
-  private static final java.util.concurrent.ConcurrentHashMap<String, String> storage = new java.util.concurrent.ConcurrentHashMap<>(); 
+private static final ConcurrentHashMap<String, RedisValue> storage = new ConcurrentHashMap<>();
 
   private static void handleClient(Socket clientSocket) {
     try (BufferedReader reader = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
@@ -61,32 +62,37 @@ public class Main {
 
     // Now process based on the first element (the command name)
     String commandName = commands.get(0).toUpperCase();
-    if (commandName.equals("SET") && commands.size() >= 3) {
+    if (commandName.equals("SET")) {
     String key = commands.get(1);
     String value = commands.get(2);
-    
-    // Store the data
-    storage.put(key, value);
-    
-    // Redis responds with "OK" (Simple String) for a successful SET
-    output.write("+OK\r\n".getBytes());
-    output.flush();
-}
-  else if (commandName.equals("GET") && commands.size() >= 2) {
-    String key = commands.get(1);
-    
-    // READ from storage (This clears the IDE warning!)
-    String value = storage.get(key);
+    long expiryAt = -1; // Default: No expiry
 
-    if (value == null) {
-        // Redis "Null Bulk String" if the key doesn't exist
+    // Check for EX or PX arguments
+    for (int i = 3; i < commands.size(); i++) {
+        String arg = commands.get(i).toUpperCase();
+        if (arg.equals("EX")) {
+            expiryAt = System.currentTimeMillis() + (Long.parseLong(commands.get(i + 1)) * 1000);
+            break;
+        } else if (arg.equals("PX")) {
+            expiryAt = System.currentTimeMillis() + Long.parseLong(commands.get(i + 1));
+            break;
+        }
+    }
+
+    storage.put(key, new RedisValue(value, expiryAt));
+    output.write("+OK\r\n".getBytes());
+}
+  else if (commandName.equals("GET")) {
+    String key = commands.get(1);
+    RedisValue val = storage.get(key);
+
+    if (val == null || val.isExpired()) {
+        if (val != null) storage.remove(key); // Cleanup expired data
         output.write("$-1\r\n".getBytes());
     } else {
-        // Return the value as a Bulk String: $<length>\r\n<data>\r\n
-        String response = "$" + value.length() + "\r\n" + value + "\r\n";
+        String response = "$" + val.data.length() + "\r\n" + val.data + "\r\n";
         output.write(response.getBytes());
     }
-    output.flush();
 }
     if (commandName.equals("PING")) {
         output.write("+PONG\r\n".getBytes());
