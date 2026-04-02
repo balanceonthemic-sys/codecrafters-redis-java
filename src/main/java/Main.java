@@ -37,38 +37,44 @@ public class Main {
         }
        }
   
-private static void handleClient(Socket clientSocket) {
+  private static final java.util.concurrent.ConcurrentHashMap<String, String> storage = new java.util.concurrent.ConcurrentHashMap<>(); 
+
+  private static void handleClient(Socket clientSocket) {
     try (BufferedReader reader = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
          OutputStream output = clientSocket.getOutputStream()) {
         
         String line;
-        while (null != (line = reader.readLine())) {
+        while ((line = reader.readLine()) != null) {
             // 1. Detect an Array (Starts with '*')
             if (line.startsWith("*")) {
-                int numElements = Integer.parseInt(line.substring(1));
-                
-                // 2. Read the first element (The Command Name)
-                reader.readLine(); // Skip the '$' length line
-                String command = reader.readLine().toUpperCase(); 
+    // Read the number of elements in the array (e.g., *2)
+    int numElements = Integer.parseInt(line.substring(1)); 
+    
+    // Create a list to store the parts of the command
+    java.util.List<String> commands = new java.util.ArrayList<>();
 
-                if (command.equals("PING")) {
-                    output.write("+PONG\r\n".getBytes());
-                } 
-                else if (command.equals("ECHO")) {
-                    // 3. Read the second element (The Argument)
-                    reader.readLine(); // Skip the '$' length line
-                    String argument = reader.readLine();
-                    
-                    // 4. Respond with a Bulk String: $<length>\r\n<data>\r\n
-                    String response = "$" + argument.length() + "\r\n" + argument + "\r\n";
-                    output.write(response.getBytes());
-                }
-                output.flush();
-            }
+    // Use numElements to drive the loop
+    for (int i = 0; i < numElements; i++) {
+        reader.readLine(); // Read and discard the '$' length line (e.g., $4)
+        commands.add(reader.readLine()); // Read the actual data (e.g., ECHO)
+    }
+
+    // Now process based on the first element (the command name)
+    String commandName = commands.get(0).toUpperCase();
+
+    if (commandName.equals("PING")) {
+        output.write("+PONG\r\n".getBytes());
+    } 
+    else if (commandName.equals("ECHO") && commands.size() > 1) {
+        String payload = commands.get(1);
+        String response = "$" + payload.length() + "\r\n" + payload + "\r\n";
+        output.write(response.getBytes());
+    }
+    output.flush();
+}
         }
     } catch (IOException e) {
         System.out.println("Client Error: " + e.getMessage());
     }
-       
 }
 }
