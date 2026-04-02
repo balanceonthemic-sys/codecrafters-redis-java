@@ -19,9 +19,14 @@ public class Main {
          // Wait for connection from client.
 
          clientSocket = serverSocket.accept();
+         java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(clientSocket.getInputStream()));
+
          while(clientSocket !=null){
+         reader.readLine();
+         reader.readLine();
+         reader.readLine();
          clientSocket.getOutputStream().write("+PONG\r\n".getBytes());
-         break;
+        
        }
 
        } catch (IOException e) {
