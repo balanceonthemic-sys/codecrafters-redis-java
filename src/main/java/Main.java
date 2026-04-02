@@ -72,6 +72,22 @@ public class Main {
     output.write("+OK\r\n".getBytes());
     output.flush();
 }
+  else if (commandName.equals("GET") && commands.size() >= 2) {
+    String key = commands.get(1);
+    
+    // READ from storage (This clears the IDE warning!)
+    String value = storage.get(key);
+
+    if (value == null) {
+        // Redis "Null Bulk String" if the key doesn't exist
+        output.write("$-1\r\n".getBytes());
+    } else {
+        // Return the value as a Bulk String: $<length>\r\n<data>\r\n
+        String response = "$" + value.length() + "\r\n" + value + "\r\n";
+        output.write(response.getBytes());
+    }
+    output.flush();
+}
     if (commandName.equals("PING")) {
         output.write("+PONG\r\n".getBytes());
     } 
