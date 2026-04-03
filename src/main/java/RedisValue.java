@@ -1,8 +1,8 @@
 class RedisValue {
-    String data;
+    Object data;
     long expiryTime; // System.currentTimeMillis() + TTL
 
-    RedisValue(String data, long expiryTime) {
+    RedisValue(Object data, long expiryTime) {
         this.data = data;
         this.expiryTime = expiryTime;
     }

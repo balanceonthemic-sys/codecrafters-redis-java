@@ -82,6 +82,34 @@ private static final ConcurrentHashMap<String, RedisValue> storage = new Concurr
     storage.put(key, new RedisValue(value, expiryAt));
     output.write("+OK\r\n".getBytes());
 }
+else if (commandName.equals("RPUSH") && commands.size() >= 3) {
+    String key = commands.get(1);
+    
+    // Retrieve existing value
+    RedisValue existingValue = storage.get(key);
+    java.util.List<String> list;
+
+    // Check if we can reuse the existing list
+    if (existingValue != null && existingValue.data instanceof java.util.List) {
+        list = (java.util.List<String>) existingValue.data;
+    } else {
+        // If it's null or a String, create a fresh List
+        list = new java.util.ArrayList<>();
+    }
+
+    // Add all new elements from the RPUSH command
+    for (int i = 2; i < commands.size(); i++) {
+        list.add(commands.get(i));
+    }
+
+    // Store it back
+    storage.put(key, new RedisValue(list, -1));
+
+    // Respond with the new Integer length: :<length>\r\n
+    String response = ":" + list.size() + "\r\n";
+    output.write(response.getBytes());
+    output.flush();
+}
   else if (commandName.equals("GET")) {
     String key = commands.get(1);
     RedisValue val = storage.get(key);
@@ -90,7 +118,7 @@ private static final ConcurrentHashMap<String, RedisValue> storage = new Concurr
         if (val != null) storage.remove(key); // Cleanup expired data
         output.write("$-1\r\n".getBytes());
     } else {
-        String response = "$" + val.data.length() + "\r\n" + val.data + "\r\n";
+        String response = "$" + ((String)val.data).length()+ "\r\n" + val.data + "\r\n";
         output.write(response.getBytes());
     }
 }
