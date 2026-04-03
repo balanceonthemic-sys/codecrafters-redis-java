@@ -110,6 +110,44 @@ else if (commandName.equals("RPUSH") && commands.size() >= 3) {
     output.write(response.getBytes());
     output.flush();
 }
+else if (commandName.equals("LRANGE") && commands.size() >= 4) {
+    String key = commands.get(1);
+    int start = Integer.parseInt(commands.get(2));
+    int stop = Integer.parseInt(commands.get(3));
+
+    RedisValue val = storage.get(key);
+    
+    // Constraint: If list doesn't exist or is the wrong type, return empty array
+    if (val == null || !(val.data instanceof java.util.List)) {
+        output.write("*0\r\n".getBytes());
+    } else {
+        java.util.List<String> list = (java.util.List<String>) val.data;
+        int size = list.size();
+
+        // Constraint: Start index greater than or equal to length
+        if (start >= size || start > stop) {
+            output.write("*0\r\n".getBytes());
+        } else {
+            // Constraint: Adjust stop index if it exceeds list length
+            if (stop >= size) {
+                stop = size - 1;
+            }
+            // Ensure start isn't negative (common Redis behavior)
+            start = Math.max(0, start);
+
+            // Build the RESP Array response
+            int count = stop - start + 1;
+            StringBuilder response = new StringBuilder("*" + count + "\r\n");
+            
+            for (int i = start; i <= stop; i++) {
+                String item = list.get(i);
+                response.append("$").append(item.length()).append("\r\n").append(item).append("\r\n");
+            }
+            output.write(response.toString().getBytes());
+        }
+    }
+    output.flush();
+}
   else if (commandName.equals("GET")) {
     String key = commands.get(1);
     RedisValue val = storage.get(key);
