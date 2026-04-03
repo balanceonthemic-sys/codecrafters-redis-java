@@ -177,6 +177,39 @@ else if (commandName.equals("LLEN") && commands.size() >= 2) {
     }
     output.flush();
 }
+else if (commandName.equals("LPOP") && commands.size() >= 2) {
+    String key = commands.get(1);
+    RedisValue val = storage.get(key);
+
+    // 1. Handle non-existent key
+    if (val == null) {
+        output.write("$-1\r\n".getBytes());
+    } 
+    // 2. Ensure it's a List
+    else if (val.data instanceof java.util.List) {
+        java.util.List<String> list = (java.util.List<String>) val.data;
+
+        if (list.isEmpty()) {
+            output.write("$-1\r\n".getBytes());
+        } else {
+            // 3. Remove the FIRST element (index 0)
+            String element = list.remove(0);
+            
+            // Cleanup: If list is now empty, Redis usually removes the key
+            if (list.isEmpty()) {
+                storage.remove(key);
+            }
+
+            // 4. Return as a Bulk String
+            String response = "$" + element.length() + "\r\n" + element + "\r\n";
+            output.write(response.getBytes());
+        }
+    } 
+    else {
+        output.write("-WRONGTYPE Operation against a key holding the wrong kind of value\r\n".getBytes());
+    }
+    output.flush();
+}
 else if (commandName.equals("LPUSH") && commands.size() >= 3) {
     String key = commands.get(1);
     
