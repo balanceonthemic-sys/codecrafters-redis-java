@@ -245,11 +245,12 @@ else if (commandName.equals("BLPOP") && commands.size() >= 3) {
             // 3. Handle the Timeout Logic
             long remaining = (endTime == 0) ? 0 : endTime - System.currentTimeMillis();
             
-            if (endTime != 0 && remaining <= 0) {
-                // Return Null Bulk String if time is up
-                output.write("$-1\r\n".getBytes());
-                break;
-            }
+           if (endTime != 0 && remaining <= 0) {
+            // FIX: Changed from $-1 (Bulk String) to *-1 (Array)
+            output.write("*-1\r\n".getBytes()); 
+            output.flush();
+            break;
+        }
 
             try {
                 // 4. Wait for the 'remaining' time or until notifyAll()
