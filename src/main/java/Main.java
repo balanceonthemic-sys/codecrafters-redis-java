@@ -220,40 +220,45 @@ else if (commandName.equals("LPOP") && commands.size() >= 2) {
 }
 else if (commandName.equals("BLPOP") && commands.size() >= 3) {
     String key = commands.get(1);
+    // 1. Parse the timeout (Redis allows decimals like 0.5)
     double timeoutSeconds = Double.parseDouble(commands.get(2));
     long timeoutMillis = (long) (timeoutSeconds * 1000);
-
-    long startTime = System.currentTimeMillis();
     
-    // We use a loop to "wait" for the data
+    long endTime = (timeoutSeconds == 0) ? 0 : System.currentTimeMillis() + timeoutMillis;
+
     synchronized (storage) {
         while (true) {
             RedisValue val = storage.get(key);
+            
+            // 2. Check if data is available
             if (val != null && val.data instanceof java.util.List && !((java.util.List)val.data).isEmpty()) {
-                // DATA FOUND: Perform the pop and return
                 java.util.List<String> list = (java.util.List<String>) val.data;
                 String element = list.remove(0);
                 
-                // BLPOP returns an array: [key, element]
+                // Response is an Array: [key, value]
                 String response = "*2\r\n$" + key.length() + "\r\n" + key + "\r\n" +
                                   "$" + element.length() + "\r\n" + element + "\r\n";
                 output.write(response.getBytes());
                 break;
             }
 
-            // CHECK TIMEOUT
-            long elapsed = System.currentTimeMillis() - startTime;
-            if (timeoutSeconds > 0 && elapsed >= timeoutMillis) {
-                output.write("$-1\r\n".getBytes()); // Null Bulk String on timeout
+            // 3. Handle the Timeout Logic
+            long remaining = (endTime == 0) ? 0 : endTime - System.currentTimeMillis();
+            
+            if (endTime != 0 && remaining <= 0) {
+                // Return Null Bulk String if time is up
+                output.write("$-1\r\n".getBytes());
                 break;
             }
 
-            // WAIT for a bit before checking again (or use wait/notify)
             try {
-                storage.wait(100); // Check every 100ms
-            } catch (InterruptedException e) { break; }
+                // 4. Wait for the 'remaining' time or until notifyAll()
+                storage.wait(remaining); 
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                break;
+            }
         }
-        storage.notifyAll();
     }
     output.flush();
 }
