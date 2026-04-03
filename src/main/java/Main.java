@@ -124,6 +124,14 @@ else if (commandName.equals("LRANGE") && commands.size() >= 4) {
         java.util.List<String> list = (java.util.List<String>) val.data;
         int size = list.size();
 
+        // --- NEW: Normalize Negative Indices ---
+        if (start < 0) start = size + start;
+        if (stop < 0) stop = size + stop;
+
+        // --- NEW: Basic Safety Bounds ---
+        if (start < 0) start = 0;
+        // ---------------------------------------
+
         // Constraint: Start index greater than or equal to length
         if (start >= size || start > stop) {
             output.write("*0\r\n".getBytes());
