@@ -218,6 +218,45 @@ else if (commandName.equals("LPOP") && commands.size() >= 2) {
     }
     output.flush();
 }
+else if (commandName.equals("BLPOP") && commands.size() >= 3) {
+    String key = commands.get(1);
+    double timeoutSeconds = Double.parseDouble(commands.get(2));
+    long timeoutMillis = (long) (timeoutSeconds * 1000);
+
+    long startTime = System.currentTimeMillis();
+    
+    // We use a loop to "wait" for the data
+    synchronized (storage) {
+        while (true) {
+            RedisValue val = storage.get(key);
+            if (val != null && val.data instanceof java.util.List && !((java.util.List)val.data).isEmpty()) {
+                // DATA FOUND: Perform the pop and return
+                java.util.List<String> list = (java.util.List<String>) val.data;
+                String element = list.remove(0);
+                
+                // BLPOP returns an array: [key, element]
+                String response = "*2\r\n$" + key.length() + "\r\n" + key + "\r\n" +
+                                  "$" + element.length() + "\r\n" + element + "\r\n";
+                output.write(response.getBytes());
+                break;
+            }
+
+            // CHECK TIMEOUT
+            long elapsed = System.currentTimeMillis() - startTime;
+            if (timeoutSeconds > 0 && elapsed >= timeoutMillis) {
+                output.write("$-1\r\n".getBytes()); // Null Bulk String on timeout
+                break;
+            }
+
+            // WAIT for a bit before checking again (or use wait/notify)
+            try {
+                storage.wait(100); // Check every 100ms
+            } catch (InterruptedException e) { break; }
+        }
+        storage.notifyAll();
+    }
+    output.flush();
+}
 else if (commandName.equals("LPUSH") && commands.size() >= 3) {
     String key = commands.get(1);
     
