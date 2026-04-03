@@ -156,6 +156,33 @@ else if (commandName.equals("LRANGE") && commands.size() >= 4) {
     }
     output.flush();
 }
+else if (commandName.equals("LPUSH") && commands.size() >= 3) {
+    String key = commands.get(1);
+    
+    // 1. Get existing value or handle new key
+    RedisValue existingValue = storage.get(key);
+    java.util.List<String> list;
+
+    if (existingValue != null && existingValue.data instanceof java.util.List) {
+        list = (java.util.List<String>) existingValue.data;
+    } else {
+        list = new java.util.ArrayList<>();
+    }
+
+    // 2. Prepend values to the front (index 0)
+    // Note: To match Redis behavior, we loop through the arguments
+    for (int i = 2; i < commands.size(); i++) {
+        list.add(0, commands.get(i)); // 0 is the start of the list
+    }
+
+    // 3. Update storage
+    storage.put(key, new RedisValue(list, -1));
+
+    // 4. Respond with new length
+    String response = ":" + list.size() + "\r\n";
+    output.write(response.getBytes());
+    output.flush();
+}
   else if (commandName.equals("GET")) {
     String key = commands.get(1);
     RedisValue val = storage.get(key);
