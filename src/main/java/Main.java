@@ -156,6 +156,27 @@ else if (commandName.equals("LRANGE") && commands.size() >= 4) {
     }
     output.flush();
 }
+else if (commandName.equals("LLEN") && commands.size() >= 2) {
+    String key = commands.get(1);
+    RedisValue val = storage.get(key);
+
+    // 1. If key doesn't exist, length is 0
+    if (val == null) {
+        output.write(":0\r\n".getBytes());
+    } 
+    // 2. Check if the data is actually a List
+    else if (val.data instanceof java.util.List) {
+        java.util.List<String> list = (java.util.List<String>) val.data;
+        // Respond with the size as a RESP Integer (:size\r\n)
+        String response = ":" + list.size() + "\r\n";
+        output.write(response.getBytes());
+    } 
+    // 3. Return WRONGTYPE error if it's a String (from SET)
+    else {
+        output.write("-WRONGTYPE Operation against a key holding the wrong kind of value\r\n".getBytes());
+    }
+    output.flush();
+}
 else if (commandName.equals("LPUSH") && commands.size() >= 3) {
     String key = commands.get(1);
     
