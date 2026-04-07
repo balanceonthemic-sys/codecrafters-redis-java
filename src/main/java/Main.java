@@ -102,8 +102,13 @@ else if (commandName.equals("RPUSH") && commands.size() >= 3) {
         list.add(commands.get(i));
     }
 
-    // Store it back
+  synchronized (storage) {
+    // 1. Update the list
     storage.put(key, new RedisValue(list, -1));
+    
+    // 2. SIGNAL: Wake up any thread waiting on 'storage'
+    storage.notifyAll(); 
+}
 
     // Respond with the new Integer length: :<length>\r\n
     String response = ":" + list.size() + "\r\n";
@@ -241,6 +246,10 @@ else if (commandName.equals("BLPOP") && commands.size() >= 3) {
                 output.write(response.getBytes());
                 break;
             }
+            if (remaining <= 0) { 
+            output.write("*-1\r\n".getBytes()); 
+            break; 
+        }
 
             // 3. Handle the Timeout Logic
             long remaining = (endTime == 0) ? 0 : endTime - System.currentTimeMillis();
@@ -283,7 +292,13 @@ else if (commandName.equals("LPUSH") && commands.size() >= 3) {
     }
 
     // 3. Update storage
+   synchronized (storage) {
+    // 1. Update the list
     storage.put(key, new RedisValue(list, -1));
+    
+    // 2. SIGNAL: Wake up any thread waiting on 'storage'
+    storage.notifyAll(); 
+}
 
     // 4. Respond with new length
     String response = ":" + list.size() + "\r\n";
