@@ -246,11 +246,7 @@ else if (commandName.equals("BLPOP") && commands.size() >= 3) {
                 output.write(response.getBytes());
                 break;
             }
-            if (remaining <= 0) { 
-            output.write("*-1\r\n".getBytes()); 
-            break; 
-        }
-
+          
             // 3. Handle the Timeout Logic
             long remaining = (endTime == 0) ? 0 : endTime - System.currentTimeMillis();
             
@@ -260,7 +256,19 @@ else if (commandName.equals("BLPOP") && commands.size() >= 3) {
             output.flush();
             break;
         }
-
+          if (remaining <= 0) { 
+            output.write("*-1\r\n".getBytes()); 
+            break; 
+        }
+            try {
+                storage.wait(remaining); 
+            } catch (InterruptedException e) {
+                // 1. Restore the interrupted status (Best practice)
+                Thread.currentThread().interrupt(); 
+                
+                // 2. Exit the while(true) loop so the thread can finish
+                break; 
+            }
             try {
                 // 4. Wait for the 'remaining' time or until notifyAll()
                 storage.wait(remaining); 
