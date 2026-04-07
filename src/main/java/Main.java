@@ -31,7 +31,13 @@ public class Main {
                 Socket clientSocket = serverSocket.accept();
                 
                 // Hand the client to a background worker thread
-                executor.submit(() -> handleClient(clientSocket));
+                executor.submit(() -> {
+                    try {
+                        handleClient(clientSocket);
+                    } catch (InterruptedException ex) {
+                        System.getLogger(Main.class.getName()).log(System.Logger.Level.ERROR, (String) null, ex);
+                    }
+                });
             }
          
          }catch (IOException e) {
