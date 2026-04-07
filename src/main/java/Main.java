@@ -4,6 +4,7 @@ import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -40,7 +41,7 @@ public class Main {
   
 private static final ConcurrentHashMap<String, RedisValue> storage = new ConcurrentHashMap<>();
 
-  private static void handleClient(Socket clientSocket) {
+  private static void handleClient(Socket clientSocket) throws InterruptedException {
     try (BufferedReader reader = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
          OutputStream output = clientSocket.getOutputStream()) {
         
@@ -231,53 +232,36 @@ else if (commandName.equals("BLPOP") && commands.size() >= 3) {
     
     long endTime = (timeoutSeconds == 0) ? 0 : System.currentTimeMillis() + timeoutMillis;
 
-    synchronized (storage) {
-        while (true) {
-            RedisValue val = storage.get(key);
-            
-            // 2. Check if data is available
-            if (val != null && val.data instanceof java.util.List && !((java.util.List)val.data).isEmpty()) {
-                java.util.List<String> list = (java.util.List<String>) val.data;
-                String element = list.remove(0);
-                
-                // Response is an Array: [key, value]
-                String response = "*2\r\n$" + key.length() + "\r\n" + key + "\r\n" +
-                                  "$" + element.length() + "\r\n" + element + "\r\n";
-                output.write(response.getBytes());
-                break;
-            }
-          
-            // 3. Handle the Timeout Logic
-            long remaining = (endTime == 0) ? 0 : endTime - System.currentTimeMillis();
-            
-           if (endTime != 0 && remaining <= 0) {
-            // FIX: Changed from $-1 (Bulk String) to *-1 (Array)
-            output.write("*-1\r\n".getBytes()); 
-            output.flush();
-            break;
-        }
-          if (remaining <= 0) { 
-            output.write("*-1\r\n".getBytes()); 
+   synchronized (storage) {
+    while (true) {
+        RedisValue val = storage.get(key);
+        
+        // 1. Check for data
+        if (val != null && val.data instanceof List && !((List)val.data).isEmpty()) {
+            List<String> list = (List<String>) val.data;
+            String element = list.remove(0);
+            if (list.isEmpty()) storage.remove(key);
+
+            String response = "*2\r\n$" + key.length() + "\r\n" + key + "\r\n" +
+                              "$" + element.length() + "\r\n" + element + "\r\n";
+            output.write(response.getBytes());
             break; 
         }
-            try {
-                storage.wait(remaining); 
-            } catch (InterruptedException e) {
-                // 1. Restore the interrupted status (Best practice)
-                Thread.currentThread().interrupt(); 
-                
-                // 2. Exit the while(true) loop so the thread can finish
-                break; 
-            }
-            try {
-                // 4. Wait for the 'remaining' time or until notifyAll()
-                storage.wait(remaining); 
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
+
+        // 2. ONLY check for timeout if timeoutSeconds > 0
+        if (timeoutSeconds > 0) {
+            long remaining = endTime - System.currentTimeMillis();
+            if (remaining <= 0) {
+                output.write("*-1\r\n".getBytes());
                 break;
             }
+            storage.wait(remaining);
+        } else {
+            // 3. Indefinite wait (timeout was 0)
+            storage.wait(); 
         }
     }
+}
     output.flush();
 }
 else if (commandName.equals("LPUSH") && commands.size() >= 3) {
