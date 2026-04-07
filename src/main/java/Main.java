@@ -290,6 +290,25 @@ else if (commandName.equals("LPUSH") && commands.size() >= 3) {
     output.write(response.getBytes());
     output.flush();
 }
+else if (commandName.equals("TYPE") && commands.size() >= 2) {
+    String key = commands.get(1);
+    RedisValue val = storage.get(key);
+
+    if (val == null) {
+        output.write("+none\r\n".getBytes());
+    } else {
+        // Use your Object-based polymorphism to identify the type
+        if (val.data instanceof String) {
+            output.write("+string\r\n".getBytes());
+        } else if (val.data instanceof java.util.List) {
+            output.write("+list\r\n".getBytes());
+        } else {
+            // Default for types not yet implemented
+            output.write("+unknown\r\n".getBytes());
+        }
+    }
+    output.flush();
+}
   else if (commandName.equals("GET")) {
     String key = commands.get(1);
     RedisValue val = storage.get(key);
