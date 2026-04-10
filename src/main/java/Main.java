@@ -303,6 +303,43 @@ else if (commandName.equals("LPUSH") && commands.size() >= 3) {
     output.write(response.getBytes());
     output.flush();
 }
+else if (commandName.equals("XADD") && commands.size() >= 4) {
+    String key = commands.get(1);
+    String id = commands.get(2);
+    
+    // 1. Parse Fields and Values into a Map
+    java.util.Map<String, String> fields = new java.util.LinkedHashMap<>();
+    for (int i = 3; i < commands.size(); i += 2) {
+        fields.put(commands.get(i), commands.get(i + 1));
+    }
+
+    synchronized (storage) {
+        RedisValue val = storage.get(key);
+        java.util.List<StreamEntry> stream;
+
+        if (val == null) {
+            stream = new java.util.ArrayList<>();
+            storage.put(key, new RedisValue(stream, -1));
+        } else if (val.data instanceof java.util.List) {
+            stream = (java.util.List<StreamEntry>) val.data;
+        } else {
+            output.write("-WRONGTYPE Operation against a key holding the wrong kind of value\r\n".getBytes());
+            output.flush();
+            return;
+        }
+
+        // 2. ID Validation Logic (Simplified for now)
+        // Note: Real Redis checks if (current_id > last_id). 
+        // If id is "*", you generate it.
+        
+        stream.add(new StreamEntry(id, fields));
+        
+        // 3. Respond with the ID
+        String response = "$" + id.length() + "\r\n" + id + "\r\n";
+        output.write(response.getBytes());
+    }
+    output.flush();
+}
 else if (commandName.equals("TYPE") && commands.size() >= 2) {
     String key = commands.get(1);
     RedisValue val = storage.get(key);
