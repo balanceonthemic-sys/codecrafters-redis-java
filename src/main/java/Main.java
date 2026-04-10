@@ -4,7 +4,10 @@ import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -12,6 +15,20 @@ import java.util.concurrent.Executors;
 
 
 public class Main {
+    static class RedisStream {
+    List<StreamEntry> entries = new ArrayList<>();
+}
+
+static class StreamEntry {
+    String id;
+    @SuppressWarnings("unused")
+    Map<String, String> fields;
+
+    StreamEntry(String id, Map<String, String> fields) {
+        this.id = id;
+        this.fields = fields;
+    }
+}
   public static void main(String[] args){
     // You can use print statements as follows for debugging, they'll be visible when running tests.
     System.out.println("Logs from your program will appear here!");
@@ -49,7 +66,7 @@ public class Main {
   
 private static final ConcurrentHashMap<String, RedisValue> storage = new ConcurrentHashMap<>();
 
-  private static void handleClient(Socket clientSocket) throws InterruptedException, IOException {
+  private static void handleClient(Socket clientSocket) throws InterruptedException {
     try (BufferedReader reader = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
          OutputStream output = clientSocket.getOutputStream()) {
         
@@ -307,69 +324,66 @@ else if (commandName.equals("LPUSH") && commands.size() >= 3) {
 }
 else if (commandName.equals("XADD") && commands.size() >= 4) {
     String key = commands.get(1);
-    String id = commands.get(2);
-    
-    // Parse fields/values into a map
-    java.util.Map<String, String> fields = new java.util.LinkedHashMap<>();
+    String id = commands.get(2); // e.g., "1526919030474-0"
+
+    // 1. Parse fields and values into a Map
+    Map<String, String> fields = new LinkedHashMap<>();
     for (int i = 3; i < commands.size(); i += 2) {
         fields.put(commands.get(i), commands.get(i + 1));
     }
 
-    synchronized (storage) {
-        RedisValue val = storage.get(key);
-        RedisStream stream;
+    try {
+        synchronized (storage) {
+            RedisValue val = storage.get(key);
+            RedisStream stream;
 
-        if (val == null) {
-            // NEW: Create the specialized Stream object
-            stream = new RedisStream();
-            storage.put(key, new RedisValue(stream, -1));
-        } else if (val.data instanceof RedisStream redisStream) {
-            // NEW: Cast to our specialized class
-            stream = redisStream;
-        } else {
-            // If the key exists but is a String or List, it's a WRONGTYPE error
-            output.write("-WRONGTYPE Operation against a key holding the wrong kind of value\r\n".getBytes());
-            output.flush();
-            return;
-        }
-        if (newMs == 0 && newSeq == 0) {
-            output.write("-ERR The ID specified in XADD must be greater than 0-0\r\n".getBytes());
-            output.flush();
-            return;
-        }
-
-        // ... more validation ...
-
-        stream.entries.add(new StreamEntry(id, fields));
-        String response = "$" + id.length() + "\r\n" + id + "\r\n";
-        output.write(response.getBytes());
-        output.flush();
-    }
-}
-    else if (commandName.equals("TYPE") && commands.size() >= 2) {
-        String key = commands.get(1);
-        RedisValue val = storage.get(key);
-
-        if (val == null) {
-            output.write("+none\r\n".getBytes());
-        } else {
-            if (val.data instanceof String) {
-                output.write("+string\r\n".getBytes());
-            } else if (val.data instanceof RedisStream) {
-                // SUCCESS: The tester will now get "stream"
-                output.write("+stream\r\n".getBytes());
-            } else if (val.data instanceof java.util.List) {
-                output.write("+list\r\n".getBytes());
+            // 2. Initialize or Retrieve the Stream
+            if (val == null) {
+                stream = new RedisStream();
+                storage.put(key, new RedisValue(stream, -1));
+            } else if (val.data instanceof RedisStream redisStream) {
+                stream = redisStream;
+            } else {
+                output.write("-WRONGTYPE Operation against a key holding the wrong kind of value\r\n".getBytes());
+                output.flush();
+                return;
             }
+
+            // 3. Parse the incoming ID components
+            String[] newParts = id.split("-");
+            long newMs = Long.parseLong(newParts[0]);
+            long newSeq = Long.parseLong(newParts[1]);
+
+            // 4. Validation Rule: Must be greater than 0-0
+            if (newMs == 0 && newSeq == 0) {
+                output.write("-ERR The ID specified in XADD must be greater than 0-0\r\n".getBytes());
+                output.flush();
+                return;
+            }
+
+            // 5. Validation Rule: Must be strictly greater than the top (last) item
+            if (!stream.entries.isEmpty()) {
+                StreamEntry lastEntry = stream.entries.get(stream.entries.size() - 1);
+                String[] lastParts = lastEntry.id.split("-");
+                long lastMs = Long.parseLong(lastParts[0]);
+                long lastSeq = Long.parseLong(lastParts[1]);
+
+                if (newMs < lastMs || (newMs == lastMs && newSeq <= lastSeq)) {
+                    output.write("-ERR The ID specified in XADD is equal or smaller than the target stream top item\r\n".getBytes());
+                    output.flush();
+                    return;
+                }
+            }
+
+            // 6. Success: Store the Entry and Respond with ID
+            stream.entries.add(new StreamEntry(id, fields));
+            String response = "$" + id.length() + "\r\n" + id + "\r\n";
+            output.write(response.getBytes());
+            output.flush();
         }
-        output.flush();
+    } catch (IOException e) {
+        // Handle potential socket issues silently as the thread will likely close anyway
     }
-        
-        // Respond with the ID
-        String response = "$" + id.length() + "\r\n" + id + "\r\n";
-        output.write(response.getBytes());
-    }
-    output.flush();
 }
   else if (commandName.equals("GET")) {
     String key = commands.get(1);
