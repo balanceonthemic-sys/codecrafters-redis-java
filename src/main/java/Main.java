@@ -307,7 +307,7 @@ else if (commandName.equals("XADD") && commands.size() >= 4) {
     String key = commands.get(1);
     String id = commands.get(2);
     
-    // 1. Parse Fields and Values into a Map
+    // Parse fields/values into a map
     java.util.Map<String, String> fields = new java.util.LinkedHashMap<>();
     for (int i = 3; i < commands.size(); i += 2) {
         fields.put(commands.get(i), commands.get(i + 1));
@@ -315,26 +315,26 @@ else if (commandName.equals("XADD") && commands.size() >= 4) {
 
     synchronized (storage) {
         RedisValue val = storage.get(key);
-        java.util.List<StreamEntry> stream;
+        RedisStream stream;
 
         if (val == null) {
-            stream = new java.util.ArrayList<>();
+            // NEW: Create the specialized Stream object
+            stream = new RedisStream();
             storage.put(key, new RedisValue(stream, -1));
-        } else if (val.data instanceof java.util.List) {
-            stream = (java.util.List<StreamEntry>) val.data;
+        } else if (val.data instanceof RedisStream redisStream) {
+            // NEW: Cast to our specialized class
+            stream = redisStream;
         } else {
+            // If the key exists but is a String or List, it's a WRONGTYPE error
             output.write("-WRONGTYPE Operation against a key holding the wrong kind of value\r\n".getBytes());
             output.flush();
             return;
         }
 
-        // 2. ID Validation Logic (Simplified for now)
-        // Note: Real Redis checks if (current_id > last_id). 
-        // If id is "*", you generate it.
+        // Add the entry to the specialized entries list
+        stream.entries.add(new StreamEntry(id, fields));
         
-        stream.add(new StreamEntry(id, fields));
-        
-        // 3. Respond with the ID
+        // Respond with the ID
         String response = "$" + id.length() + "\r\n" + id + "\r\n";
         output.write(response.getBytes());
     }
@@ -347,14 +347,13 @@ else if (commandName.equals("TYPE") && commands.size() >= 2) {
     if (val == null) {
         output.write("+none\r\n".getBytes());
     } else {
-        // Use your Object-based polymorphism to identify the type
         if (val.data instanceof String) {
             output.write("+string\r\n".getBytes());
+        } else if (val.data instanceof RedisStream) {
+            // SUCCESS: The tester will now get "stream"
+            output.write("+stream\r\n".getBytes());
         } else if (val.data instanceof java.util.List) {
             output.write("+list\r\n".getBytes());
-        } else {
-            // Default for types not yet implemented
-            output.write("+unknown\r\n".getBytes());
         }
     }
     output.flush();
