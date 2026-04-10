@@ -49,7 +49,7 @@ public class Main {
   
 private static final ConcurrentHashMap<String, RedisValue> storage = new ConcurrentHashMap<>();
 
-  private static void handleClient(Socket clientSocket) throws InterruptedException {
+  private static void handleClient(Socket clientSocket) throws InterruptedException, IOException {
     try (BufferedReader reader = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
          OutputStream output = clientSocket.getOutputStream()) {
         
@@ -332,31 +332,42 @@ else if (commandName.equals("XADD") && commands.size() >= 4) {
             output.flush();
             return;
         }
+        if (newMs == 0 && newSeq == 0) {
+            output.write("-ERR The ID specified in XADD must be greater than 0-0\r\n".getBytes());
+            output.flush();
+            return;
+        }
 
-        // Add the entry to the specialized entries list
+        // ... more validation ...
+
         stream.entries.add(new StreamEntry(id, fields));
+        String response = "$" + id.length() + "\r\n" + id + "\r\n";
+        output.write(response.getBytes());
+        output.flush();
+    }
+}
+    else if (commandName.equals("TYPE") && commands.size() >= 2) {
+        String key = commands.get(1);
+        RedisValue val = storage.get(key);
+
+        if (val == null) {
+            output.write("+none\r\n".getBytes());
+        } else {
+            if (val.data instanceof String) {
+                output.write("+string\r\n".getBytes());
+            } else if (val.data instanceof RedisStream) {
+                // SUCCESS: The tester will now get "stream"
+                output.write("+stream\r\n".getBytes());
+            } else if (val.data instanceof java.util.List) {
+                output.write("+list\r\n".getBytes());
+            }
+        }
+        output.flush();
+    }
         
         // Respond with the ID
         String response = "$" + id.length() + "\r\n" + id + "\r\n";
         output.write(response.getBytes());
-    }
-    output.flush();
-}
-else if (commandName.equals("TYPE") && commands.size() >= 2) {
-    String key = commands.get(1);
-    RedisValue val = storage.get(key);
-
-    if (val == null) {
-        output.write("+none\r\n".getBytes());
-    } else {
-        if (val.data instanceof String) {
-            output.write("+string\r\n".getBytes());
-        } else if (val.data instanceof RedisStream) {
-            // SUCCESS: The tester will now get "stream"
-            output.write("+stream\r\n".getBytes());
-        } else if (val.data instanceof java.util.List) {
-            output.write("+list\r\n".getBytes());
-        }
     }
     output.flush();
 }
