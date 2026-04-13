@@ -129,6 +129,40 @@ private static final ConcurrentHashMap<String, RedisValue> storage = new Concurr
                     }
                     output.write((":" + list.size() + "\r\n").getBytes());
                 }
+                else if (commandName.equals("LRANGE")) {
+                            String key = commands.get(1);
+                            int start = Integer.parseInt(commands.get(2));
+                            int stop = Integer.parseInt(commands.get(3));
+
+                            RedisValue val = storage.get(key);
+                            
+                            // Ensure we ALWAYS write a response, even if null
+                            if (val == null || !(val.data instanceof List)) {
+                                output.write("*0\r\n".getBytes());
+                            } else {
+                                List<String> list = (List<String>) val.data;
+                                int size = list.size();
+
+                                // Normalize indices
+                                if (start < 0) start = size + start;
+                                if (stop < 0) stop = size + stop;
+                                start = Math.max(0, start);
+                                if (stop >= size) stop = size - 1;
+
+                                if (start >= size || start > stop) {
+                                    output.write("*0\r\n".getBytes());
+                                } else {
+                                    int count = stop - start + 1;
+                                    StringBuilder response = new StringBuilder("*" + count + "\r\n");
+                                    for (int i = start; i <= stop; i++) {
+                                        String item = list.get(i);
+                                        response.append("$").append(item.length()).append("\r\n").append(item).append("\r\n");
+                                    }
+                                    output.write(response.toString().getBytes());
+                                }
+                            }
+                            // No 'return' here! Let it hit the final flush.
+                        }
                 else if (commandName.equals("LPUSH") && commands.size() >= 3) {
                     String key = commands.get(1);
                     RedisValue existingValue = storage.get(key);
@@ -234,7 +268,7 @@ private static final ConcurrentHashMap<String, RedisValue> storage = new Concurr
                         }
                     }
                 }
-                                else if (commandName.equals("LPOP") && commands.size() >= 2) {
+                    else if (commandName.equals("LPOP") && commands.size() >= 2) {
                     String key = commands.get(1);
                     RedisValue val = storage.get(key);
 
