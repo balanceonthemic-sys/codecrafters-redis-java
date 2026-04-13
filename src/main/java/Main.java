@@ -205,54 +205,81 @@ private static final ConcurrentHashMap<String, RedisValue> storage = new Concurr
                     }
                     // No 'return' here!
                 }
-                else if (commandName.equals("XADD") && commands.size() >= 4) {
-                    String key = commands.get(1);
-                    String id = commands.get(2);
-                    try {
-                        String[] newParts = id.split("-");
-                        long newMs = Long.parseLong(newParts[0]);
-                        long newSeq = Long.parseLong(newParts[1]);
+               else if (commandName.equals("XADD") && commands.size() >= 4) {
+    String key = commands.get(1);
+    String idInput = commands.get(2); // e.g., "1000-*"
 
-                        Map<String, String> fields = new LinkedHashMap<>();
-                        for (int i = 3; i < commands.size(); i += 2) {
-                            fields.put(commands.get(i), commands.get(i + 1));
-                        }
+    Map<String, String> fields = new LinkedHashMap<>();
+    for (int i = 3; i < commands.size(); i += 2) {
+        fields.put(commands.get(i), commands.get(i + 1));
+    }
 
-                        synchronized (storage) {
-                            RedisValue val = storage.get(key);
-                            RedisStream stream;
+    try {
+        synchronized (storage) {
+            RedisValue val = storage.get(key);
+            RedisStream stream = (val == null) ? new RedisStream() : (RedisStream) val.data;
+            if (val == null) storage.put(key, new RedisValue(stream, -1));
 
-                            if (val == null) {
-                                stream = new RedisStream();
-                                storage.put(key, new RedisValue(stream, -1));
-                            } else if (val.data instanceof RedisStream redisStream) {
-                                stream = redisStream;
-                            } else {
-                                output.write("-WRONGTYPE Operation against a key holding the wrong kind of value\r\n".getBytes());
-                                output.flush();
-                                continue;
-                            }
+            String finalId;
+            String[] parts = idInput.split("-");
+            
+            // --- NEW: Sequence Auto-generation Logic ---
+            if (parts[1].equals("*")) {
+                long currentMs = Long.parseLong(parts[0]);
+                long nextSeq;
 
-                            if (newMs == 0 && newSeq == 0) {
-                                output.write("-ERR The ID specified in XADD must be greater than 0-0\r\n".getBytes());
-                            } else if (!stream.entries.isEmpty()) {
-                                StreamEntry lastEntry = stream.entries.get(stream.entries.size() - 1);
-                                String[] lastParts = lastEntry.id.split("-");
-                                if (newMs < Long.parseLong(lastParts[0]) || (newMs == Long.parseLong(lastParts[0]) && newSeq <= Long.parseLong(lastParts[1]))) {
-                                    output.write("-ERR The ID specified in XADD is equal or smaller than the target stream top item\r\n".getBytes());
-                                } else {
-                                    stream.entries.add(new StreamEntry(id, fields));
-                                    output.write(("$" + id.length() + "\r\n" + id + "\r\n").getBytes());
-                                }
-                            } else {
-                                stream.entries.add(new StreamEntry(id, fields));
-                                output.write(("$" + id.length() + "\r\n" + id + "\r\n").getBytes());
-                            }
-                        }
-                    } catch (IOException | NumberFormatException e) {
-                        output.write("-ERR Invalid ID format\r\n".getBytes());
+                if (stream.entries.isEmpty()) {
+                    // Rule: 0-0 is forbidden, start at 0-1
+                    nextSeq = (currentMs == 0) ? 1 : 0;
+                } else {
+                    StreamEntry last = stream.entries.get(stream.entries.size() - 1);
+                    String[] lastParts = last.id.split("-");
+                    long lastMs = Long.parseLong(lastParts[0]);
+                    long lastSeq = Long.parseLong(lastParts[1]);
+
+                    if (currentMs == lastMs) {
+                        nextSeq = lastSeq + 1;
+                    } else if (currentMs > lastMs) {
+                        nextSeq = 0;
+                    } else {
+                        output.write("-ERR The ID specified in XADD is equal or smaller than the target stream top item\r\n".getBytes());
+                        output.flush();
+                        return;
                     }
                 }
+                finalId = currentMs + "-" + nextSeq;
+            } else {
+                // Handle Explicit IDs (Same logic as before)
+                finalId = idInput;
+                long newMs = Long.parseLong(parts[0]);
+                long newSeq = Long.parseLong(parts[1]);
+
+                if (newMs == 0 && newSeq == 0) {
+                    output.write("-ERR The ID specified in XADD must be greater than 0-0\r\n".getBytes());
+                    output.flush();
+                    return;
+                }
+
+                if (!stream.entries.isEmpty()) {
+                    StreamEntry last = stream.entries.get(stream.entries.size() - 1);
+                    String[] lastParts = last.id.split("-");
+                    if (newMs < Long.parseLong(lastParts[0]) || (newMs == Long.parseLong(lastParts[0]) && newSeq <= Long.parseLong(lastParts[1]))) {
+                        output.write("-ERR The ID specified in XADD is equal or smaller than the target stream top item\r\n".getBytes());
+                        output.flush();
+                        return;
+                    }
+                }
+            }
+
+            // Success: Use finalId
+            stream.entries.add(new StreamEntry(finalId, fields));
+            output.write(("$" + finalId.length() + "\r\n" + finalId + "\r\n").getBytes());
+        }
+    } catch (IOException | NumberFormatException e) {
+        output.write("-ERR Invalid ID format\r\n".getBytes());
+    }
+    output.flush();
+}
                 else if (commandName.equals("BLPOP") && commands.size() >= 3) {
                     String key = commands.get(1);
                     double timeoutSeconds = Double.parseDouble(commands.get(2));
