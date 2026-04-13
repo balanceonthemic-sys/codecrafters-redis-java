@@ -192,6 +192,19 @@ private static final ConcurrentHashMap<String, RedisValue> storage = new Concurr
                         output.write("+list\r\n".getBytes());
                     }
                 }
+                else if (commandName.equals("LLEN")) {
+                    String key = commands.get(1);
+                    RedisValue val = storage.get(key);
+                    if (val == null) {
+                        output.write(":0\r\n".getBytes());
+                    } else if (val.data instanceof List) {
+                        List<String> list = (List<String>) val.data;
+                        output.write((":" + list.size() + "\r\n").getBytes());
+                    } else {
+                        output.write("-WRONGTYPE Operation against a key holding the wrong kind of value\r\n".getBytes());
+                    }
+                    // No 'return' here!
+                }
                 else if (commandName.equals("XADD") && commands.size() >= 4) {
                     String key = commands.get(1);
                     String id = commands.get(2);
