@@ -205,9 +205,9 @@ private static final ConcurrentHashMap<String, RedisValue> storage = new Concurr
                     }
                     // No 'return' here!
                 }
-               else if (commandName.equals("XADD") && commands.size() >= 4) {
+else if (commandName.equals("XADD") && commands.size() >= 4) {
     String key = commands.get(1);
-    String idInput = commands.get(2); // e.g., "1000-*"
+    String idInput = commands.get(2);
 
     Map<String, String> fields = new LinkedHashMap<>();
     for (int i = 3; i < commands.size(); i += 2) {
@@ -223,13 +223,12 @@ private static final ConcurrentHashMap<String, RedisValue> storage = new Concurr
             String finalId;
             String[] parts = idInput.split("-");
             
-            // --- NEW: Sequence Auto-generation Logic ---
+            // 1. Handle Auto-generated Sequence (ms-*)
             if (parts[1].equals("*")) {
                 long currentMs = Long.parseLong(parts[0]);
                 long nextSeq;
 
                 if (stream.entries.isEmpty()) {
-                    // Rule: 0-0 is forbidden, start at 0-1
                     nextSeq = (currentMs == 0) ? 1 : 0;
                 } else {
                     StreamEntry last = stream.entries.get(stream.entries.size() - 1);
@@ -244,41 +243,49 @@ private static final ConcurrentHashMap<String, RedisValue> storage = new Concurr
                     } else {
                         output.write("-ERR The ID specified in XADD is equal or smaller than the target stream top item\r\n".getBytes());
                         output.flush();
-                        return;
+                        return; // Valid exit: Error sent
                     }
                 }
                 finalId = currentMs + "-" + nextSeq;
-            } else {
-                // Handle Explicit IDs (Same logic as before)
-                finalId = idInput;
+            } 
+            // 2. Handle Explicit IDs (ms-seq)
+            else {
                 long newMs = Long.parseLong(parts[0]);
                 long newSeq = Long.parseLong(parts[1]);
 
                 if (newMs == 0 && newSeq == 0) {
                     output.write("-ERR The ID specified in XADD must be greater than 0-0\r\n".getBytes());
                     output.flush();
-                    return;
+                    return; // Valid exit: Error sent
                 }
 
                 if (!stream.entries.isEmpty()) {
                     StreamEntry last = stream.entries.get(stream.entries.size() - 1);
                     String[] lastParts = last.id.split("-");
-                    if (newMs < Long.parseLong(lastParts[0]) || (newMs == Long.parseLong(lastParts[0]) && newSeq <= Long.parseLong(lastParts[1]))) {
+                    long lastMs = Long.parseLong(lastParts[0]);
+                    long lastSeq = Long.parseLong(lastParts[1]);
+
+                    if (newMs < lastMs || (newMs == lastMs && newSeq <= lastSeq)) {
                         output.write("-ERR The ID specified in XADD is equal or smaller than the target stream top item\r\n".getBytes());
                         output.flush();
-                        return;
+                        return; // Valid exit: Error sent
                     }
                 }
+                finalId = idInput;
             }
 
-            // Success: Use finalId
+            // 3. Success Path
             stream.entries.add(new StreamEntry(finalId, fields));
             output.write(("$" + finalId.length() + "\r\n" + finalId + "\r\n").getBytes());
+            output.flush();
         }
     } catch (IOException | NumberFormatException e) {
-        output.write("-ERR Invalid ID format\r\n".getBytes());
+        // Fallback for parsing errors to prevent "no content"
+        try {
+            output.write("-ERR Invalid ID format\r\n".getBytes());
+            output.flush();
+        } catch (IOException ignored) {}
     }
-    output.flush();
 }
                 else if (commandName.equals("BLPOP") && commands.size() >= 3) {
                     String key = commands.get(1);
