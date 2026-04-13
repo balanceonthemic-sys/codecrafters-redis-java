@@ -234,6 +234,51 @@ private static final ConcurrentHashMap<String, RedisValue> storage = new Concurr
                         }
                     }
                 }
+                                else if (commandName.equals("LPOP") && commands.size() >= 2) {
+                    String key = commands.get(1);
+                    RedisValue val = storage.get(key);
+
+                    if (val == null || !(val.data instanceof List)) {
+                        // If key doesn't exist, Redis returns a Null Bulk String for single pop
+                        // or an empty array if it was a multi-pop. The tester expects a response.
+                        if (commands.size() == 2) {
+                            output.write("$-1\r\n".getBytes());
+                        } else {
+                            output.write("*0\r\n".getBytes());
+                        }
+                    } else {
+                        List<String> list = (List<String>) val.data;
+                        
+                        if (commands.size() == 2) {
+                            // Standard single pop
+                            if (list.isEmpty()) {
+                                output.write("$-1\r\n".getBytes());
+                            } else {
+                                String element = list.remove(0);
+                                output.write(("$" + element.length() + "\r\n" + element + "\r\n").getBytes());
+                            }
+                        } else {
+                            // Multi-pop logic (LPOP key count)
+                            int count = Integer.parseInt(commands.get(2));
+                            int actualToPop = Math.min(count, list.size());
+                            
+                            if (actualToPop == 0) {
+                                output.write("*0\r\n".getBytes());
+                            } else {
+                                StringBuilder response = new StringBuilder("*" + actualToPop + "\r\n");
+                                for (int i = 0; i < actualToPop; i++) {
+                                    String element = list.remove(0);
+                                    response.append("$").append(element.length()).append("\r\n").append(element).append("\r\n");
+                                }
+                                output.write(response.toString().getBytes());
+                            }
+                        }
+                        // Cleanup empty keys to save memory
+                        if (list.isEmpty()) storage.remove(key);
+                    }
+                    // Critical: Ensure the response is pushed out
+                    output.flush(); 
+                }
                 else if (commandName.equals("PING")) {
                     output.write("+PONG\r\n".getBytes());
                 } 
