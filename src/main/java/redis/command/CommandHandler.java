@@ -211,8 +211,9 @@ public class ClientHandler implements Runnable {
                 String commandName = commands.get(0).toUpperCase();
 
                 // ─── TRANSACTION HANDLING ────────────────────────────
-                if (commandName.equals("MULTI")) {
+             if (commandName.equals("MULTI")) {
                     if (inTransaction) {
+                        // Queue an error result so EXEC returns it in the array
                         out.write("-ERR MULTI calls can not be nested\r\n".getBytes());
                     } else {
                         inTransaction = true;
@@ -221,7 +222,6 @@ public class ClientHandler implements Runnable {
                     out.flush();
                     continue;
                 }
-
                 if (commandName.equals("DISCARD")) {
                     if (!inTransaction) {
                         out.write("-ERR DISCARD without MULTI\r\n".getBytes());
@@ -234,25 +234,27 @@ public class ClientHandler implements Runnable {
                     continue;
                 }
 
-                if (commandName.equals("EXEC")) {
+              if (commandName.equals("EXEC")) {
                     if (!inTransaction) {
                         out.write("-ERR EXEC without MULTI\r\n".getBytes());
                         out.flush();
                         continue;
                     }
 
-                    // Execute all queued commands
                     inTransaction = false;
+
+                    // Write outer array size FIRST
                     out.write(("*" + commandQueue.size() + "\r\n").getBytes());
 
+                    // Then execute each command — results go directly into the array
                     for (List<String> queuedCmd : commandQueue) {
                         String queuedName = queuedCmd.get(0).toUpperCase();
                         route(queuedName, queuedCmd, out);
-                        out.flush();
+                        // NO flush here — flush only once at the end
                     }
 
                     commandQueue.clear();
-                    out.flush();
+                    out.flush(); // single flush at the very end
                     continue;
                 }
 
