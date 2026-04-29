@@ -64,6 +64,7 @@ public class ClientHandler implements Runnable {
             System.out.println("Client error: " + e.getMessage());
         }
     }
+   
 
     private void route(String command, List<String> commands, OutputStream out)
             throws IOException, InterruptedException {

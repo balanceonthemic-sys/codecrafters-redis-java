@@ -86,9 +86,72 @@ private static int compareIds(String id1, String id2) {
     if (ms1 != ms2) return Long.compare(ms1, ms2);
     return Long.compare(seq1, seq2);
 }
-        public static void handleXread(List<String> commands, OutputStream out) throws IOException {
+private static String buildXreadResponse(
+        List<String> keys, List<String> startIds, int count) {
+
+    List<String> streamResponses = new ArrayList<>();
+
+    for (int s = 0; s < keys.size(); s++) {
+        String key     = keys.get(s);
+        String startId = startIds.get(s);
+
+        RedisValue val = RedisStorage.get(key);
+        if (val == null || !(val.data instanceof RedisStream)) continue;
+
+        RedisStream stream = (RedisStream) val.data;
+        List<StreamEntry> result = new ArrayList<>();
+
+        for (StreamEntry entry : stream.entries) {
+            if (compareIds(entry.id, startId) > 0) {
+                result.add(entry);
+                if (result.size() >= count) break;
+            }
+        }
+
+        if (result.isEmpty()) continue;
+
+        StringBuilder sr = new StringBuilder();
+        sr.append("$").append(key.length()).append("\r\n")
+          .append(key).append("\r\n");
+        sr.append("*").append(result.size()).append("\r\n");
+
+        for (StreamEntry entry : result) {
+            sr.append("*2\r\n");
+            sr.append("$").append(entry.id.length())
+              .append("\r\n").append(entry.id).append("\r\n");
+            sr.append("*").append(entry.fields.size() * 2).append("\r\n");
+            for (Map.Entry<String, String> field : entry.fields.entrySet()) {
+                sr.append("$").append(field.getKey().length())
+                  .append("\r\n").append(field.getKey()).append("\r\n");
+                sr.append("$").append(field.getValue().length())
+                  .append("\r\n").append(field.getValue()).append("\r\n");
+            }
+        }
+        streamResponses.add(sr.toString());
+    }
+
+    if (streamResponses.isEmpty()) return null;
+
+    StringBuilder response = new StringBuilder();
+    response.append("*").append(streamResponses.size()).append("\r\n");
+    for (String sr : streamResponses) {
+        response.append("*2\r\n").append(sr);
+    }
+    return response.toString();
+}
+
+    public static void handleXread(List<String> commands, OutputStream out)
+        throws IOException, InterruptedException {
+
     int idx = 1;
-    int count = Integer.MAX_VALUE; // no limit by default
+    int count = Integer.MAX_VALUE;
+    long blockMs = -1; // -1 means not blocking
+
+    // Parse optional BLOCK argument
+    if (commands.get(idx).equalsIgnoreCase("BLOCK")) {
+        blockMs = Long.parseLong(commands.get(idx + 1));
+        idx += 2;
+    }
 
     // Parse optional COUNT argument
     if (commands.get(idx).equalsIgnoreCase("COUNT")) {
@@ -97,109 +160,80 @@ private static int compareIds(String id1, String id2) {
     }
 
     // Skip STREAMS keyword
-    idx++; // skip "STREAMS"
+    idx++;
 
-    // Remaining args: stream keys then IDs
-    // e.g. STREAMS stream1 stream2 id1 id2
+    // Parse stream keys and start IDs
     int numStreams = (commands.size() - idx) / 2;
-    List<String> keys = new ArrayList<>();
-    List<String> startIds = new ArrayList<>();
+    List<String> keys      = new ArrayList<>();
+    List<String> startIds  = new ArrayList<>();
 
     for (int i = 0; i < numStreams; i++) {
         keys.add(commands.get(idx + i));
         startIds.add(commands.get(idx + numStreams + i));
     }
 
-    // Build response — array of [streamName, entries] per stream
-    StringBuilder response = new StringBuilder();
-    int streamsWithResults = 0;
-    List<String> streamResponses = new ArrayList<>();
-
+    // Resolve $ to the current last ID for each stream
+    // $ means "only entries added AFTER this command" 
     for (int s = 0; s < numStreams; s++) {
-        String key     = keys.get(s);
-        String startId = startIds.get(s);
-
-        // $ means start from last entry — treat as max current ID
-        if (startId.equals("$")) {
-            RedisValue val = RedisStorage.get(key);
-            if (val == null || !(val.data instanceof RedisStream)) {
-                startId = "0-0";
-            } else {
+        if (startIds.get(s).equals("$")) {
+            RedisValue val = RedisStorage.get(keys.get(s));
+            if (val instanceof RedisValue && val.data instanceof RedisStream) {
                 RedisStream st = (RedisStream) val.data;
-                if (st.entries.isEmpty()) {
-                    startId = "0-0";
+                String lastId = st.entries.isEmpty() ? "0-0"
+                        : st.entries.get(st.entries.size() - 1).id;
+                startIds.set(s, lastId);
+            } else {
+                startIds.set(s, "0-0");
+            }
+        }
+        // Normalize — if no seq given default to 0
+        if (!startIds.get(s).contains("-"))
+            startIds.set(s, startIds.get(s) + "-0");
+    }
+
+    // Blocking mode
+    if (blockMs >= 0) {
+        long deadline = (blockMs == 0) ? 0
+                : System.currentTimeMillis() + blockMs;
+
+        synchronized (RedisStorage.getRawStore()) {
+            while (true) {
+                // Try to read — same logic as non-blocking
+                String response = buildXreadResponse(keys, startIds, count);
+
+                if (response != null) {
+                    // Found data — write and return
+                    out.write(response.getBytes());
+                    out.flush();
+                    return;
+                }
+
+                // No data yet — wait
+                if (blockMs == 0) {
+                    // Block forever until notified
+                    RedisStorage.getRawStore().wait();
                 } else {
-                    // $ means after last entry — use last ID as exclusive start
-                    startId = st.entries.get(st.entries.size() - 1).id;
+                    long remaining = deadline - System.currentTimeMillis();
+                    if (remaining <= 0) {
+                        // Timeout expired — return null
+                        out.write("*-1\r\n".getBytes());
+                        out.flush();
+                        return;
+                    }
+                    RedisStorage.getRawStore().wait(remaining);
                 }
             }
         }
-
-        // Normalize startId — if no seq, default to 0
-        if (!startId.contains("-")) startId = startId + "-0";
-
-        RedisValue val = RedisStorage.get(key);
-        if (val == null || !(val.data instanceof RedisStream)) {
-            continue; // skip streams that don't exist
-        }
-
-        RedisStream stream = (RedisStream) val.data;
-        List<StreamEntry> result = new ArrayList<>();
-
-        for (StreamEntry entry : stream.entries) {
-            // XREAD is EXCLUSIVE of the start ID (unlike XRANGE which is inclusive)
-            if (compareIds(entry.id, startId) > 0) {
-                result.add(entry);
-                if (result.size() >= count) break;
-            }
-        }
-
-        if (result.isEmpty()) continue; // don't include empty streams
-
-        // Build this stream's response
-        StringBuilder streamResp = new StringBuilder();
-
-        // Stream name
-        streamResp.append("$").append(key.length()).append("\r\n")
-                  .append(key).append("\r\n");
-
-        // Entries array
-        streamResp.append("*").append(result.size()).append("\r\n");
-        for (StreamEntry entry : result) {
-            streamResp.append("*2\r\n");
-            streamResp.append("$").append(entry.id.length())
-                      .append("\r\n").append(entry.id).append("\r\n");
-
-            int fieldCount = entry.fields.size() * 2;
-            streamResp.append("*").append(fieldCount).append("\r\n");
-            for (Map.Entry<String, String> field : entry.fields.entrySet()) {
-                streamResp.append("$").append(field.getKey().length())
-                          .append("\r\n").append(field.getKey()).append("\r\n");
-                streamResp.append("$").append(field.getValue().length())
-                          .append("\r\n").append(field.getValue()).append("\r\n");
-            }
-        }
-
-        streamResponses.add(streamResp.toString());
-        streamsWithResults++;
     }
 
-    // If no results at all
-    if (streamsWithResults == 0) {
+    // Non-blocking mode — read immediately
+    String response = buildXreadResponse(keys, startIds, count);
+    if (response == null) {
         out.write("*-1\r\n".getBytes());
-        return;
+    } else {
+        out.write(response.getBytes());
     }
-
-    // Write outer array — one entry per stream
-    response.append("*").append(streamsWithResults).append("\r\n");
-    for (String sr : streamResponses) {
-        response.append("*2\r\n"); // [streamName, entries]
-        response.append(sr);
-    }
-
-    out.write(response.toString().getBytes());
 }
-
     public static void handleXrange(List<String> commands, OutputStream out) throws IOException {
     String key     = commands.get(1);
     String startId = commands.get(2);
@@ -514,6 +548,7 @@ private static int compareIds(String id1, String id2) {
             out.flush();
         }
     }
+    
 
     // ─── UTILITY COMMANDS ────────────────────────────────────────────────────────
 
