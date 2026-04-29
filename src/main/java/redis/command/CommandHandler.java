@@ -504,6 +504,8 @@ private static int compareIds(String id1, String id2) {
                 }
 
                 stream.entries.add(new StreamEntry(finalId, fields));
+                RedisStorage.getRawStore().notifyAll(); // wake up any blocking XREAD threads
+
                 out.write(("$" + finalId.length() + "\r\n" + finalId + "\r\n").getBytes());
                 out.flush();
             }
