@@ -53,6 +53,33 @@ public class CommandHandler {
             out.write(response.getBytes());
         }
     }
+    public static void handleIncr(List<String> commands, OutputStream out) throws IOException {
+    String key = commands.get(1);
+    RedisValue val = RedisStorage.get(key);
+
+    // Key doesn't exist — start from 0
+    if (val == null) {
+        RedisStorage.put(key, new RedisValue("1", -1));
+        out.write(":1\r\n".getBytes());
+        return;
+    }
+
+    // Key exists but isn't a string
+    if (!(val.data instanceof String)) {
+        out.write("-ERR value is not an integer or out of range\r\n".getBytes());
+        return;
+    }
+
+    // Try to parse as integer
+    try {
+        long current = Long.parseLong((String) val.data);
+        long newValue = current + 1;
+        RedisStorage.put(key, new RedisValue(String.valueOf(newValue), -1));
+        out.write((":" + newValue + "\r\n").getBytes());
+    } catch (NumberFormatException e) {
+        out.write("-ERR value is not an integer or out of range\r\n".getBytes());
+    }
+}
 
     // ─── TYPE COMMAND ────────────────────────────────────────────────────────────
 
