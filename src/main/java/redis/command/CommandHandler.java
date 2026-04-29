@@ -86,6 +86,119 @@ private static int compareIds(String id1, String id2) {
     if (ms1 != ms2) return Long.compare(ms1, ms2);
     return Long.compare(seq1, seq2);
 }
+        public static void handleXread(List<String> commands, OutputStream out) throws IOException {
+    int idx = 1;
+    int count = Integer.MAX_VALUE; // no limit by default
+
+    // Parse optional COUNT argument
+    if (commands.get(idx).equalsIgnoreCase("COUNT")) {
+        count = Integer.parseInt(commands.get(idx + 1));
+        idx += 2;
+    }
+
+    // Skip STREAMS keyword
+    idx++; // skip "STREAMS"
+
+    // Remaining args: stream keys then IDs
+    // e.g. STREAMS stream1 stream2 id1 id2
+    int numStreams = (commands.size() - idx) / 2;
+    List<String> keys = new ArrayList<>();
+    List<String> startIds = new ArrayList<>();
+
+    for (int i = 0; i < numStreams; i++) {
+        keys.add(commands.get(idx + i));
+        startIds.add(commands.get(idx + numStreams + i));
+    }
+
+    // Build response — array of [streamName, entries] per stream
+    StringBuilder response = new StringBuilder();
+    int streamsWithResults = 0;
+    List<String> streamResponses = new ArrayList<>();
+
+    for (int s = 0; s < numStreams; s++) {
+        String key     = keys.get(s);
+        String startId = startIds.get(s);
+
+        // $ means start from last entry — treat as max current ID
+        if (startId.equals("$")) {
+            RedisValue val = RedisStorage.get(key);
+            if (val == null || !(val.data instanceof RedisStream)) {
+                startId = "0-0";
+            } else {
+                RedisStream st = (RedisStream) val.data;
+                if (st.entries.isEmpty()) {
+                    startId = "0-0";
+                } else {
+                    // $ means after last entry — use last ID as exclusive start
+                    startId = st.entries.get(st.entries.size() - 1).id;
+                }
+            }
+        }
+
+        // Normalize startId — if no seq, default to 0
+        if (!startId.contains("-")) startId = startId + "-0";
+
+        RedisValue val = RedisStorage.get(key);
+        if (val == null || !(val.data instanceof RedisStream)) {
+            continue; // skip streams that don't exist
+        }
+
+        RedisStream stream = (RedisStream) val.data;
+        List<StreamEntry> result = new ArrayList<>();
+
+        for (StreamEntry entry : stream.entries) {
+            // XREAD is EXCLUSIVE of the start ID (unlike XRANGE which is inclusive)
+            if (compareIds(entry.id, startId) > 0) {
+                result.add(entry);
+                if (result.size() >= count) break;
+            }
+        }
+
+        if (result.isEmpty()) continue; // don't include empty streams
+
+        // Build this stream's response
+        StringBuilder streamResp = new StringBuilder();
+
+        // Stream name
+        streamResp.append("$").append(key.length()).append("\r\n")
+                  .append(key).append("\r\n");
+
+        // Entries array
+        streamResp.append("*").append(result.size()).append("\r\n");
+        for (StreamEntry entry : result) {
+            streamResp.append("*2\r\n");
+            streamResp.append("$").append(entry.id.length())
+                      .append("\r\n").append(entry.id).append("\r\n");
+
+            int fieldCount = entry.fields.size() * 2;
+            streamResp.append("*").append(fieldCount).append("\r\n");
+            for (Map.Entry<String, String> field : entry.fields.entrySet()) {
+                streamResp.append("$").append(field.getKey().length())
+                          .append("\r\n").append(field.getKey()).append("\r\n");
+                streamResp.append("$").append(field.getValue().length())
+                          .append("\r\n").append(field.getValue()).append("\r\n");
+            }
+        }
+
+        streamResponses.add(streamResp.toString());
+        streamsWithResults++;
+    }
+
+    // If no results at all
+    if (streamsWithResults == 0) {
+        out.write("*-1\r\n".getBytes());
+        return;
+    }
+
+    // Write outer array — one entry per stream
+    response.append("*").append(streamsWithResults).append("\r\n");
+    for (String sr : streamResponses) {
+        response.append("*2\r\n"); // [streamName, entries]
+        response.append(sr);
+    }
+
+    out.write(response.toString().getBytes());
+}
 
     public static void handleXrange(List<String> commands, OutputStream out) throws IOException {
     String key     = commands.get(1);

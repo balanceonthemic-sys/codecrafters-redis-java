@@ -81,6 +81,7 @@ public class ClientHandler implements Runnable {
             case "BLPOP"  -> CommandHandler.handleBlpop(commands, out);
             case "XADD"   -> CommandHandler.handleXadd(commands, out);
             case "XRANGE" -> CommandHandler.handleXrange(commands, out);
+            case "XREAD" -> CommandHandler.handleXread(commands, out);
             default       -> out.write(
                     ("-ERR unknown command '" + command + "'\r\n").getBytes());
         }
