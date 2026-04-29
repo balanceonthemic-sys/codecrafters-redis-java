@@ -70,6 +70,72 @@ public class CommandHandler {
             out.write("+list\r\n".getBytes());
         }
     }
+    /**
+ * Compares two Redis stream IDs in "ms-seq" format.
+ * Returns negative, zero, or positive like compareTo.
+ */
+private static int compareIds(String id1, String id2) {
+    String[] parts1 = id1.split("-");
+    String[] parts2 = id2.split("-");
+
+    long ms1  = Long.parseLong(parts1[0]);
+    long ms2  = Long.parseLong(parts2[0]);
+    long seq1 = Long.parseLong(parts1[1]);
+    long seq2 = Long.parseLong(parts2[1]);
+
+    if (ms1 != ms2) return Long.compare(ms1, ms2);
+    return Long.compare(seq1, seq2);
+}
+
+    public static void handleXrange(List<String> commands, OutputStream out) throws IOException {
+    String key     = commands.get(1);
+    String startId = commands.get(2);
+    String endId   = commands.get(3);
+
+    RedisValue val = RedisStorage.get(key);
+
+    if (val == null || !(val.data instanceof RedisStream)) {
+        out.write("*0\r\n".getBytes());
+        return;
+    }
+
+    RedisStream stream = (RedisStream) val.data;
+
+    // Normalise - and + to actual boundary IDs
+    if (startId.equals("-")) startId = "0-0";
+    if (endId.equals("+"))   endId   = Long.MAX_VALUE + "-" + Long.MAX_VALUE;
+
+    // If only ms given (no -seq), default seq to 0 for start, MAX for end
+    if (!startId.contains("-")) startId = startId + "-0";
+    if (!endId.contains("-"))   endId   = endId   + "-" + Long.MAX_VALUE;
+
+    List<StreamEntry> result = new ArrayList<>();
+
+    for (StreamEntry entry : stream.entries) {
+        if (compareIds(entry.id, startId) >= 0 &&
+            compareIds(entry.id, endId)   <= 0) {
+            result.add(entry);
+        }
+    }
+
+    // Write RESP response
+    out.write(("*" + result.size() + "\r\n").getBytes());
+    for (StreamEntry entry : result) {
+        // Each entry is a 2-element array: [id, [field, value, field, value...]]
+        out.write("*2\r\n".getBytes());
+
+        // Write the ID
+        out.write(("$" + entry.id.length() + "\r\n" + entry.id + "\r\n").getBytes());
+
+        // Write the fields as a flat array
+        int fieldCount = entry.fields.size() * 2; // key + value per field
+        out.write(("*" + fieldCount + "\r\n").getBytes());
+        for (Map.Entry<String, String> field : entry.fields.entrySet()) {
+            out.write(("$" + field.getKey().length()   + "\r\n" + field.getKey()   + "\r\n").getBytes());
+            out.write(("$" + field.getValue().length() + "\r\n" + field.getValue() + "\r\n").getBytes());
+        }
+    }
+}
 
     // ─── LIST COMMANDS ───────────────────────────────────────────────────────────
 

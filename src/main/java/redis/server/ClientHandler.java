@@ -1,7 +1,5 @@
 package redis.server;
 
-import redis.command.CommandHandler;
-
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -9,6 +7,8 @@ import java.io.OutputStream;
 import java.net.Socket;
 import java.util.ArrayList;
 import java.util.List;
+
+import redis.command.CommandHandler;
 
 /**
  * Handles a single Redis client connection.
@@ -80,6 +80,7 @@ public class ClientHandler implements Runnable {
             case "LPOP"   -> CommandHandler.handleLpop(commands, out);
             case "BLPOP"  -> CommandHandler.handleBlpop(commands, out);
             case "XADD"   -> CommandHandler.handleXadd(commands, out);
+            case "XRANGE" -> CommandHandler.handleXrange(commands, out);
             default       -> out.write(
                     ("-ERR unknown command '" + command + "'\r\n").getBytes());
         }
