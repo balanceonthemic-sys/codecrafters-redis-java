@@ -1,16 +1,16 @@
 package redis.command;
 
-import redis.model.RedisStream;
-import redis.model.RedisValue;
-import redis.model.StreamEntry;
-import redis.storage.RedisStorage;
-
 import java.io.IOException;
 import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+
+import redis.model.RedisStream;
+import redis.model.RedisValue;
+import redis.model.StreamEntry;
+import redis.storage.RedisStorage;
 
 /**
  * Handles all Redis commands.
@@ -246,6 +246,29 @@ public class CommandHandler {
                 RedisValue val = RedisStorage.get(key);
                 RedisStream stream = (val == null) ? new RedisStream() : (RedisStream) val.data;
                 if (val == null) RedisStorage.put(key, new RedisValue(stream, -1));
+                    // Handle fully auto-generated ID — bare "*"
+                    if (idInput.equals("*")) {
+                        long currentMs = System.currentTimeMillis();
+                        long nextSeq;
+
+                        if (stream.entries.isEmpty()) {
+                            nextSeq = 0;
+                        } else {
+                            StreamEntry last = stream.entries.get(stream.entries.size() - 1);
+                            String[] lastParts = last.id.split("-");
+                            long lastMs  = Long.parseLong(lastParts[0]);
+                            long lastSeq = Long.parseLong(lastParts[1]);
+
+                            if (currentMs == lastMs) {
+                                nextSeq = lastSeq + 1; // same millisecond — increment seq
+                            } else {
+                                nextSeq = 0; // new millisecond — reset seq
+                            }
+                        }
+
+                        idInput = currentMs + "-" + nextSeq; // e.g. "1713000000000-0"
+                        // fall through to success path below
+                    }
 
                 String[] parts = idInput.split("-");
                 String finalId;
