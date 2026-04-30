@@ -304,7 +304,7 @@ public class ClientHandler implements Runnable {
 }
 public static void handleInfo(List<String> commands, OutputStream out) throws IOException {
     // Build the replication info string
-    String info = null;
+    String info;
     if (ServerConfig.getRole().equals("master")) {
         // Master info
         info = """
