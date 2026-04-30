@@ -23,23 +23,34 @@ public class ServerConfig {
     public static void setRole(String r)          { role = r; }
     public static void setMasterReplOffset(int o) { masterReplOffset = o; }
 
-    public static void parse(String[] args) {
-        for (int i = 0; i < args.length; i++) {
-            switch (args[i]) {
-                case "--port" -> {
-                    if (i + 1 < args.length)
-                        port = Integer.parseInt(args[i + 1]);
-                }
-                case "--replicaof" -> {
-                    if (i + 2 < args.length) {
-                        masterHost = args[i + 1];
-                        masterPort = Integer.parseInt(args[i + 2]);
-                        role = "slave";
+   public static void parse(String[] args) {
+    for (int i = 0; i < args.length; i++) {
+        switch (args[i]) {
+            case "--port" -> {
+                if (i + 1 < args.length)
+                    port = Integer.parseInt(args[i + 1]);
+            }
+            case "--replicaof" -> {
+                if (i + 1 < args.length) {
+                    String value = args[i + 1];
+
+                    if (value.contains(" ")) {
+                        // Codecrafters format: --replicaof "localhost 6379"
+                        String[] parts = value.split(" ");
+                        masterHost = parts[0];
+                        masterPort = Integer.parseInt(parts[1]);
+                    } else {
+                        // Two arg format: --replicaof localhost 6379
+                        masterHost = value;
+                        if (i + 2 < args.length)
+                            masterPort = Integer.parseInt(args[i + 2]);
                     }
+                    role = "slave";
                 }
             }
         }
     }
+}
 
     // Generates a random 40 char hex string like real Redis does
     private static String generateReplId() {
