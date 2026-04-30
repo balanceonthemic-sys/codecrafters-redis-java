@@ -304,14 +304,26 @@ public class ClientHandler implements Runnable {
 }
 public static void handleInfo(List<String> commands, OutputStream out) throws IOException {
     // Build the replication info string
-    String info = """
-                  # Replication\r
-                  role:""" + ServerConfig.role + "\r\n" +
-                  "master_replid:" + ServerConfig.masterReplId + "\r\n" +
-                  "master_repl_offset:" + ServerConfig.masterReplOffset + "\r\n";
-
-    // Send as a bulk string
-    out.write(("$" + info.length() + "\r\n" + info + "\r\n").getBytes());
+    String info = null;
+    if (ServerConfig.getRole().equals("master")) {
+        // Master info
+        info = """
+               # Replication\r
+               role:master\r
+               master_replid:""" + ServerConfig.getMasterReplId() + "\r\n" +
+               "master_repl_offset:" + ServerConfig.getMasterReplOffset() + "\r\n";
+    } else {
+        // Slave info
+        info = """
+               # Replication\r
+               role:slave\r
+               master_host:""" + ServerConfig.getMasterHost() + "\r\n" +
+               "master_port:" + ServerConfig.getMasterPort() + "\r\n" +
+               "master_link_status:up\r\n" +
+               "master_last_io_seconds_ago:0\r\n" +
+               "master_sync_in_progress:0\r\n" +
+               "slave_repl_offset:" + ServerConfig.getMasterReplOffset() + "\r\n";
+    }
 }
 
     public static void handleXread(List<String> commands, OutputStream out)

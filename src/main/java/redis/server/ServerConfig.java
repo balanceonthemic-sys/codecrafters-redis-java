@@ -4,14 +4,24 @@ import java.security.SecureRandom;
 
 public class ServerConfig {
 
-    public static int port = 6379;
-    public static String role = "master";
-    public static String masterHost = null;
-    public static int masterPort = -1;
+     private static int port = 6379;
+    private static String role = "master";
+    private static String masterHost = null;
+    private static int masterPort = -1;
+    private static final String MasterReplId = generateReplId();
+    private static int masterReplOffset = 0;
 
-    // Generated once at startup — identifies this master
-    public static final String masterReplId = generateReplId();
-    public static int masterReplOffset = 0;
+    // Getters
+    public static int getPort()              { return port; }
+    public static String getRole()           { return role; }
+    public static String getMasterHost()     { return masterHost; }
+    public static int getMasterPort()        { return masterPort; }
+    public static String getMasterReplId()   { return MasterReplId; }
+    public static int getMasterReplOffset()  { return masterReplOffset; }
+
+    // Setters for mutable fields
+    public static void setRole(String r)          { role = r; }
+    public static void setMasterReplOffset(int o) { masterReplOffset = o; }
 
     public static void parse(String[] args) {
         for (int i = 0; i < args.length; i++) {
@@ -42,7 +52,5 @@ public class ServerConfig {
         return sb.toString();
     }
 
-    public static String getMasterReplId() {
-        return masterReplId;
-    }
+
 }

@@ -18,11 +18,11 @@ public class Main {
 
         ServerConfig.parse(args);
 
-        System.out.println("Redis server starting on port " + ServerConfig.port);
+        System.out.println("Redis server starting on port " + ServerConfig.getPort() + " as " + ServerConfig.getRole());
 
         ExecutorService executor = Executors.newFixedThreadPool(THREAD_POOL);
 
-        try (ServerSocket serverSocket = new ServerSocket(ServerConfig.port)) {
+        try (ServerSocket serverSocket = new ServerSocket(ServerConfig.getPort())) {
             serverSocket.setReuseAddress(true);
 
             while (true) {
