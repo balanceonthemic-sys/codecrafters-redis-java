@@ -14,10 +14,16 @@ public class Main {
 
     private static final int THREAD_POOL  = 10;
 
-   public static void main(String[] args) {
+public static void main(String[] args) {
     ServerConfig.parse(args);
 
     System.out.println("Redis server starting on port " + ServerConfig.getPort());
+
+    // If this server is a replica — start handshake with master
+    if (ServerConfig.getRole().equals("slave")) {
+        // Run in background thread so server can accept connections too
+        new Thread(ReplicationHandler::startHandshake).start();
+    }
 
     ExecutorService executor = Executors.newFixedThreadPool(THREAD_POOL);
 

@@ -335,6 +335,10 @@ public static void handleInfo(List<String> commands, OutputStream out) throws IO
         out.write("-ERR internal error\r\n".getBytes());
     }
 }
+public static void handleReplconf(List<String> commands, OutputStream out) throws IOException {
+    // Master just acknowledges REPLCONF with OK for now
+    out.write("+OK\r\n".getBytes());
+}
 
     public static void handleXread(List<String> commands, OutputStream out)
         throws IOException, InterruptedException {
