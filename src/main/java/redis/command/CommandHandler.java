@@ -303,26 +303,36 @@ public class ClientHandler implements Runnable {
     }
 }
 public static void handleInfo(List<String> commands, OutputStream out) throws IOException {
-    // Build the replication info string
-    String info;
-    if (ServerConfig.getRole().equals("master")) {
-        // Master info
-        info = """
-               # Replication\r
-               role:master\r
-               master_replid:""" + ServerConfig.getMasterReplId() + "\r\n" +
-               "master_repl_offset:" + ServerConfig.getMasterReplOffset() + "\r\n";
-    } else {
-        // Slave info
-        info = """
-               # Replication\r
-               role:slave\r
-               master_host:""" + ServerConfig.getMasterHost() + "\r\n" +
-               "master_port:" + ServerConfig.getMasterPort() + "\r\n" +
-               "master_link_status:up\r\n" +
-               "master_last_io_seconds_ago:0\r\n" +
-               "master_sync_in_progress:0\r\n" +
-               "slave_repl_offset:" + ServerConfig.getMasterReplOffset() + "\r\n";
+    try {
+        String info;
+
+        if (ServerConfig.getRole().equals("master")) {
+            info = """
+                   # Replication\r
+                   role:master\r
+                   master_replid:""" + ServerConfig.getMasterReplId() + "\r\n" +
+                   "master_repl_offset:" + ServerConfig.getMasterReplOffset() + "\r\n";
+        } else {
+            String host   = ServerConfig.getMasterHost() != null ? ServerConfig.getMasterHost() : "";
+            int mport     = ServerConfig.getMasterPort() > 0 ? ServerConfig.getMasterPort() : 0;
+
+            info = """
+                   # Replication\r
+                   role:slave\r
+                   master_host:""" + host + "\r\n" +
+                   "master_port:" + mport + "\r\n" +
+                   "master_link_status:up\r\n" +
+                   "master_last_io_seconds_ago:0\r\n" +
+                   "master_sync_in_progress:0\r\n" +
+                   "slave_repl_offset:" + ServerConfig.getMasterReplOffset() + "\r\n";
+        }
+
+        out.write(("$" + info.length() + "\r\n" + info + "\r\n").getBytes());
+
+    } catch (IOException e) {
+        // Print what went wrong so we can debug
+        System.out.println("handleInfo error: " + e.getMessage());
+        out.write("-ERR internal error\r\n".getBytes());
     }
 }
 
