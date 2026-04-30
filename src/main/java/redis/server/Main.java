@@ -14,26 +14,25 @@ public class Main {
 
     private static final int THREAD_POOL  = 10;
 
-    public static void main(String[] args) {
+   public static void main(String[] args) {
+    ServerConfig.parse(args);
 
-        ServerConfig.parse(args);
+    System.out.println("Redis server starting on port " + ServerConfig.getPort());
 
-        System.out.println("Redis server starting on port " + ServerConfig.getPort() + " as " + ServerConfig.getRole());
+    ExecutorService executor = Executors.newFixedThreadPool(THREAD_POOL);
 
-        ExecutorService executor = Executors.newFixedThreadPool(THREAD_POOL);
+    try (ServerSocket serverSocket = new ServerSocket(ServerConfig.getPort())) {
+        serverSocket.setReuseAddress(true);
 
-        try (ServerSocket serverSocket = new ServerSocket(ServerConfig.getPort())) {
-            serverSocket.setReuseAddress(true);
-
-            while (true) {
-                Socket clientSocket = serverSocket.accept();
-                executor.submit(new ClientHandler(clientSocket));
-            }
-
-        } catch (IOException e) {
-            System.out.println("Server error: " + e.getMessage());
-        } finally {
-            executor.shutdown();
+        while (true) {
+            Socket clientSocket = serverSocket.accept();
+            executor.submit(new ClientHandler(clientSocket));
         }
+
+    } catch (IOException e) {
+        System.out.println("Server error: " + e.getMessage());
+    } finally {
+        executor.shutdown();
     }
+}
 }
