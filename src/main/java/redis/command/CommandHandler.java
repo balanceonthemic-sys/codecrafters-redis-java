@@ -13,6 +13,7 @@ import java.util.Map;
 import redis.model.RedisStream;
 import redis.model.RedisValue;
 import redis.model.StreamEntry;
+import redis.server.ServerConfig;
 import redis.storage.RedisStorage;
 
 /**
@@ -294,10 +295,23 @@ public class ClientHandler implements Runnable {
             case "XADD"   -> CommandHandler.handleXadd(commands, out);
             case "XRANGE" -> CommandHandler.handleXrange(commands, out);
             case "XREAD"  -> CommandHandler.handleXread(commands, out);
+            case "INFO" -> CommandHandler.handleInfo(commands, out);
+
             default       -> out.write(
                     ("-ERR unknown command '" + command + "'\r\n").getBytes());
         }
     }
+}
+public static void handleInfo(List<String> commands, OutputStream out) throws IOException {
+    // Build the replication info string
+    String info = """
+                  # Replication\r
+                  role:""" + ServerConfig.role + "\r\n" +
+                  "master_replid:" + ServerConfig.masterReplId + "\r\n" +
+                  "master_repl_offset:" + ServerConfig.masterReplOffset + "\r\n";
+
+    // Send as a bulk string
+    out.write(("$" + info.length() + "\r\n" + info + "\r\n").getBytes());
 }
 
     public static void handleXread(List<String> commands, OutputStream out)
