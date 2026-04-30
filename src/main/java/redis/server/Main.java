@@ -12,15 +12,25 @@ import java.util.concurrent.Executors;
  */
 public class Main {
 
-    private static final int PORT         = 6379;
+    private static final int DEFAULT_PORT = 6379;
     private static final int THREAD_POOL  = 10;
 
     public static void main(String[] args) {
-        System.out.println("Redis server starting on port " + PORT);
+
+              int port = DEFAULT_PORT;
+        for (int i = 0; i < args.length; i++) {
+            if (args[i].equals("--port") && i + 1 < args.length) {
+                port = Integer.parseInt(args[i + 1]);
+                break;
+            }
+        }
+
+
+        System.out.println("Redis server starting on port " + ServerConfig.port);
 
         ExecutorService executor = Executors.newFixedThreadPool(THREAD_POOL);
 
-        try (ServerSocket serverSocket = new ServerSocket(PORT)) {
+        try (ServerSocket serverSocket = new ServerSocket(ServerConfig.port)) {
             serverSocket.setReuseAddress(true);
 
             while (true) {
